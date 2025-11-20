@@ -1,4 +1,3 @@
-
 import React from 'react';
 import { YandereLedger } from '../types';
 import { Activity, HeartCrack, ShieldAlert, BrainCircuit, Scale } from 'lucide-react';
@@ -7,15 +6,15 @@ interface LedgerProps {
   ledger: YandereLedger;
 }
 
-const StatBar: React.FC<{ label: string; value: number; color: string; icon: React.ReactNode }> = ({ label, value, color, icon }) => (
-  <div className="mb-3 group relative">
-    <div className="flex justify-between items-center mb-1 text-xs font-serif tracking-widest text-textBone opacity-80">
-      <span className="flex items-center gap-2">{icon} {label.toUpperCase()}</span>
-      <span>{Math.round(value)}%</span>
+const StatBar: React.FC<{ label: string; value: number; colorClass: string; icon: React.ReactNode }> = ({ label, value, colorClass, icon }) => (
+  <div className="mb-4 group">
+    <div className="flex justify-between items-center mb-1.5 text-[10px] font-mono tracking-[0.15em] text-zinc-500 group-hover:text-zinc-300 transition-colors">
+      <span className="flex items-center gap-2 uppercase">{icon} {label}</span>
+      <span className="font-bold">{Math.round(value)}%</span>
     </div>
-    <div className="h-1.5 w-full bg-concrete border border-opacity-20 border-textBone rounded-full overflow-hidden">
+    <div className="h-1 w-full bg-zinc-800 overflow-hidden">
       <div 
-        className={`h-full transition-all duration-1000 ease-out ${color}`} 
+        className={`h-full transition-all duration-1000 ease-out ${colorClass}`} 
         style={{ width: `${Math.max(0, Math.min(100, value))}%` }}
       />
     </div>
@@ -24,41 +23,41 @@ const StatBar: React.FC<{ label: string; value: number; color: string; icon: Rea
 
 export const LedgerDisplay: React.FC<LedgerProps> = ({ ledger }) => {
   return (
-    <div className="p-6 border-2 border-oxblood bg-concrete bg-opacity-90 backdrop-blur-sm shadow-2xl">
-      <h2 className="text-xl font-heading text-renaissanceGold mb-4 border-b border-oxblood pb-2 tracking-[0.2em]">
-        Yandere Ledger
+    <div className="border border-zinc-800 bg-zinc-900/50 p-5">
+      <h2 className="text-xs font-mono text-zinc-400 mb-6 uppercase tracking-widest flex items-center gap-2 before:w-2 before:h-2 before:bg-oxblood before:rounded-full">
+        Psychometric State
       </h2>
       
-      <div className="space-y-4">
+      <div className="space-y-1">
         <StatBar 
-          label="Physical Integrity" 
+          label="Integrity" 
           value={ledger.physicalIntegrity} 
-          color="bg-red-700"
-          icon={<Activity size={14} />}
+          colorClass="bg-red-900"
+          icon={<Activity size={12} />}
         />
         <StatBar 
-          label="Trauma Level" 
+          label="Trauma" 
           value={ledger.traumaLevel} 
-          color="bg-purple-600"
-          icon={<HeartCrack size={14} />}
+          colorClass="bg-purple-900"
+          icon={<HeartCrack size={12} />}
         />
         <StatBar 
-          label="Shame / Abyss" 
+          label="Shame" 
           value={ledger.shamePainAbyssLevel} 
-          color="bg-indigo-900"
-          icon={<ShieldAlert size={14} />}
+          colorClass="bg-indigo-900"
+          icon={<ShieldAlert size={12} />}
         />
         <StatBar 
           label="Hope" 
           value={ledger.hopeLevel} 
-          color="bg-candleGlow"
-          icon={<BrainCircuit size={14} />}
+          colorClass="bg-yellow-700"
+          icon={<BrainCircuit size={12} />}
         />
         <StatBar 
           label="Compliance" 
           value={ledger.complianceScore} 
-          color="bg-emerald-800"
-          icon={<Scale size={14} />}
+          colorClass="bg-emerald-900"
+          icon={<Scale size={12} />}
         />
       </div>
     </div>

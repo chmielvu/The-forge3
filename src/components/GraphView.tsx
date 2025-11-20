@@ -1,4 +1,3 @@
-
 import React, { useEffect, useRef } from 'react';
 import * as d3 from 'd3';
 import { KnowledgeGraph, GraphNode, GraphLink } from '../types';
@@ -13,17 +12,16 @@ export const GraphView: React.FC<GraphViewProps> = ({ graph }) => {
   useEffect(() => {
     if (!svgRef.current || !graph.nodes.length) return;
 
-    const width = 300;
-    const height = 300;
+    const width = 250;
+    const height = 250;
     const svg = d3.select(svgRef.current);
-    svg.selectAll("*").remove(); // Clear previous
+    svg.selectAll("*").remove();
 
-    // Setup simulation
     const simulation = d3.forceSimulation<GraphNode>(graph.nodes)
-      .force("link", d3.forceLink<GraphNode, GraphLink>(graph.links).id(d => d.id).distance(60))
-      .force("charge", d3.forceManyBody().strength(-100))
+      .force("link", d3.forceLink<GraphNode, GraphLink>(graph.links).id(d => d.id).distance(50))
+      .force("charge", d3.forceManyBody().strength(-80))
       .force("center", d3.forceCenter(width / 2, height / 2))
-      .force("collide", d3.forceCollide().radius(20));
+      .force("collide", d3.forceCollide().radius(15));
 
     // Links
     const link = svg.append("g")
@@ -31,11 +29,11 @@ export const GraphView: React.FC<GraphViewProps> = ({ graph }) => {
       .data(graph.links)
       .join("line")
       .attr("stroke", d => {
-        if (d.type === 'dominance') return "#8B1E2B"; // Oxblood
-        if (d.type === 'alliance') return "#C9A34E"; // Gold
-        return "#555";
+        if (d.type === 'dominance') return "#881337"; // Oxblood
+        if (d.type === 'alliance') return "#a16207"; // Gold
+        return "#3f3f46"; // Zinc 700
       })
-      .attr("stroke-width", d => Math.sqrt(d.value) * 2)
+      .attr("stroke-width", 1)
       .attr("opacity", 0.6);
 
     // Nodes
@@ -43,11 +41,11 @@ export const GraphView: React.FC<GraphViewProps> = ({ graph }) => {
       .selectAll("circle")
       .data(graph.nodes)
       .join("circle")
-      .attr("r", d => d.id === 'Subject' ? 8 : 5)
+      .attr("r", 4)
       .attr("fill", d => {
-        if (d.group === 1) return "#C9A34E"; // Faculty (Gold)
-        if (d.group === 2) return "#0B2F2A"; // Prefect (Green)
-        return "#EDE9E1"; // Subject (Bone)
+        if (d.group === 1) return "#a16207"; // Faculty
+        if (d.group === 2) return "#047857"; // Prefect
+        return "#e4e4e7"; // Subject
       })
       .call(d3.drag<SVGCircleElement, GraphNode>()
         .on("start", dragstarted)
@@ -59,11 +57,12 @@ export const GraphView: React.FC<GraphViewProps> = ({ graph }) => {
       .selectAll("text")
       .data(graph.nodes)
       .join("text")
-      .text(d => d.name.split(' ')[0]) // First name only
+      .text(d => d.name.split(' ')[0])
       .attr("font-size", "8px")
-      .attr("fill", "#aaa")
-      .attr("dx", 8)
-      .attr("dy", 3);
+      .attr("font-family", "monospace")
+      .attr("fill", "#71717a") // Zinc 500
+      .attr("dx", 6)
+      .attr("dy", 2);
 
     simulation.on("tick", () => {
       link
@@ -104,9 +103,6 @@ export const GraphView: React.FC<GraphViewProps> = ({ graph }) => {
   }, [graph]);
 
   return (
-    <div className="border-2 border-concrete bg-black bg-opacity-50 p-2 shadow-inner">
-      <h3 className="text-xs font-heading text-concrete bg-renaissanceGold px-2 py-1 inline-block mb-2">NetworkX Graph</h3>
-      <svg ref={svgRef} width="100%" height="300" viewBox="0 0 300 300" className="overflow-visible"></svg>
-    </div>
+    <svg ref={svgRef} width="100%" height="250" viewBox="0 0 250 250" className="overflow-visible bg-transparent"></svg>
   );
 };
