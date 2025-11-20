@@ -25,20 +25,6 @@ const App: React.FC = () => {
   const { speak, speaking } = useTTS();
   const bottomRef = useRef<HTMLDivElement>(null);
 
-  const [isPageVisible, setIsPageVisible] = useState(true);
-
-  useEffect(() => {
-    const handleVisibilityChange = () => {
-      setIsPageVisible(!document.hidden);
-    };
-    document.addEventListener("visibilitychange", handleVisibilityChange);
-    
-    // Set initial state correctly
-    setIsPageVisible(!document.hidden);
-
-    return () => document.removeEventListener("visibilitychange", handleVisibilityChange);
-  }, []);
-
   // ---------------- Initialization ----------------
   useEffect(() => {
     // Initial Scene Generation
@@ -144,14 +130,6 @@ const App: React.FC = () => {
           const newLore = await generateLoreEntry();
           setLore(newLore);
       }
-  }
-
-  if (!isPageVisible) {
-    return (
-      <div className="min-h-screen bg-[#120D1F] flex items-center justify-center">
-        <h1 className="text-textBone font-heading text-xl font-bold">Please make app visible</h1>
-      </div>
-    );
   }
 
   // ---------------- Render ----------------
