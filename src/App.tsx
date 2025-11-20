@@ -41,82 +41,101 @@ const App: React.FC = () => {
   const startScene = async (action: string) => {
     setGameState(prev => ({ ...prev, isLoading: true, isThinking: true }));
 
-    const newScene = await generateDirectorOutput(gameState, action);
+    let newScene: Scene | null = null;
 
-    // Trigger Image Generation in parallel if visual prompt exists
-    if (newScene.visualPrompt) {
-        generateSceneImage(newScene.visualPrompt).then(img => {
-            if (img) setSceneImage(img);
-        });
+    try {
+        newScene = await generateDirectorOutput(gameState, action);
+
+        // Trigger Image Generation in parallel if visual prompt exists
+        if (newScene.visualPrompt) {
+            // Added .catch() for parallel safety
+            generateSceneImage(newScene.visualPrompt).then(img => {
+                if (img) setSceneImage(img);
+            }).catch(e => console.error("Image generation failed silently:", e));
+        }
+
+        // Trigger TTS
+        // Match speaker to character roster to find their default voice definition
+        const speakerChar = CHARACTERS.find(c => 
+            newScene!.speaker === c.name || 
+            newScene!.speaker.includes(c.name) ||
+            c.name.includes(newScene!.speaker)
+        );
+        
+        // Use dynamic voice definition from scene if available, otherwise fallback to character default
+        const voiceToUse = newScene.voiceDef || speakerChar?.voiceDef;
+
+        // Speak the narrative. 
+        speak(newScene.description, voiceToUse);
+
+    } catch (e) {
+        console.error("Critical error in startScene execution:", e);
+        // Use a final fail-safe scene if the generation or promise chain totally failed
+        newScene = {
+            description: "A profound silence descends. The machine is broken. You are alone. (API Error or Network Failure)",
+            speaker: "System Error",
+            location: "The Glitch",
+            choices: [{ id: "system_fail", text: "Attempt to proceed (Desperation)", type: "desperation" }],
+            visualPrompt: "A cracked monitor with white noise and red light, Brutalist style."
+        };
     }
-
-    // Trigger TTS
-    // Match speaker to character roster to find their default voice definition
-    const speakerChar = CHARACTERS.find(c => 
-      newScene.speaker === c.name || 
-      newScene.speaker.includes(c.name) ||
-      c.name.includes(newScene.speaker)
-    );
     
-    // Use dynamic voice definition from scene if available, otherwise fallback to character default
-    const voiceToUse = newScene.voiceDef || speakerChar?.voiceDef;
-
-    // Speak the narrative. 
-    speak(newScene.description, voiceToUse);
-
+    // This state update is now guaranteed to run
     setGameState(prev => {
-      // Apply Ledger Updates
-      const newLedger = { ...prev.ledger };
-      if (newScene.ledgerUpdates) {
-        Object.entries(newScene.ledgerUpdates).forEach(([key, value]) => {
-           // @ts-ignore - dynamic access
-           if (typeof newLedger[key] === 'number') newLedger[key] = Math.max(0, Math.min(100, newLedger[key] + value));
-        });
-        newLedger.turnCount++;
-      }
+        if (!newScene) return { ...prev, isLoading: false, isThinking: false }; // Should not happen
 
-      // Update Graph based on speaker (Simulated Dynamic Growth)
-      const newGraph = { ...prev.graph };
-      if (newScene.speaker && newScene.speaker !== 'Narrator' && newScene.speaker !== 'System') {
-          const speakerId = CHARACTERS.find(c => newScene.speaker.includes(c.name))?.id || newScene.speaker;
-          
-          // Check if link exists
-          const linkIndex = newGraph.links.findIndex(l => 
-            (typeof l.source === 'string' ? l.source : (l.source as any).id) === speakerId && 
-            (typeof l.target === 'string' ? l.target : (l.target as any).id) === 'Subject'
-          );
+        // Apply Ledger Updates
+        const newLedger = { ...prev.ledger };
+        if (newScene.ledgerUpdates) {
+            Object.entries(newScene.ledgerUpdates).forEach(([key, value]) => {
+               // @ts-ignore - dynamic access
+               if (typeof newLedger[key] === 'number') newLedger[key] = Math.max(0, Math.min(100, newLedger[key] + value));
+            });
+            newLedger.turnCount++;
+        }
 
-          if (linkIndex === -1 && speakerId !== 'Subject') {
-             // Add new relationship if character interacts for first time
-             newGraph.links.push({
-                 source: speakerId,
-                 target: 'Subject',
-                 value: 0.1,
-                 type: 'dominance'
-             });
-             // Add node if missing
-             if (!newGraph.nodes.find(n => n.id === speakerId)) {
-                 newGraph.nodes.push({ 
-                     id: speakerId, 
-                     name: newScene.speaker, 
-                     group: 1 
-                 });
-             }
-          } else if (linkIndex > -1) {
-             // Intensify existing
-             newGraph.links[linkIndex].value = Math.min(1, newGraph.links[linkIndex].value + 0.1);
-          }
-      }
+        // Update Graph based on speaker (Simulated Dynamic Growth)
+        const newGraph = { ...prev.graph };
+        if (newScene.speaker && newScene.speaker !== 'Narrator' && newScene.speaker !== 'System Error' && newScene.speaker !== 'System') {
+            const speakerId = CHARACTERS.find(c => newScene!.speaker.includes(c.name))?.id || newScene.speaker;
+            
+            // Check if link exists
+            const linkIndex = newGraph.links.findIndex(l => 
+              (typeof l.source === 'string' ? l.source : (l.source as any).id) === speakerId && 
+              (typeof l.target === 'string' ? l.target : (l.target as any).id) === 'Subject'
+            );
 
-      return {
-        ...prev,
-        ledger: newLedger,
-        graph: newGraph,
-        currentScene: newScene,
-        isLoading: false,
-        isThinking: false,
-        history: prev.currentScene ? [...prev.history, prev.currentScene] : prev.history
-      };
+            if (linkIndex === -1 && speakerId !== 'Subject') {
+               // Add new relationship if character interacts for first time
+               newGraph.links.push({
+                   source: speakerId,
+                   target: 'Subject',
+                   value: 0.1,
+                   type: 'dominance'
+               });
+               // Add node if missing
+               if (!newGraph.nodes.find(n => n.id === speakerId)) {
+                   newGraph.nodes.push({ 
+                       id: speakerId, 
+                       name: newScene.speaker, 
+                       group: 1 
+                   });
+               }
+            } else if (linkIndex > -1) {
+               // Intensify existing
+               newGraph.links[linkIndex].value = Math.min(1, newGraph.links[linkIndex].value + 0.1);
+            }
+        }
+
+        return {
+          ...prev,
+          ledger: newLedger,
+          graph: newGraph,
+          currentScene: newScene,
+          isLoading: false, // SUCCESS! Guaranteed to exit loading state.
+          isThinking: false,
+          history: prev.currentScene ? [...prev.history, prev.currentScene] : prev.history
+        };
     });
   };
 

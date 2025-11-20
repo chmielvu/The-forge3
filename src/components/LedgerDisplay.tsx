@@ -1,3 +1,4 @@
+
 import React from 'react';
 import { YandereLedger } from '../types';
 import { Activity, HeartCrack, ShieldAlert, BrainCircuit, Scale } from 'lucide-react';
