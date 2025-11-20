@@ -2,10 +2,17 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { INITIAL_LEDGER, INITIAL_GRAPH, CHARACTERS } from './constants';
 import { GameState, Scene, SceneChoice, GraphLink } from './types';
-import { generateDirectorOutput, generateLoreEntry, generateSceneImage } from './services/geminiService';
+import { 
+    generateDirectorOutput, 
+    generateLoreEntry, 
+    generateSceneImage, 
+    editSceneImage, 
+    generateSceneVideo, 
+    analyzeEvidence 
+} from './services/geminiService';
 import { LedgerDisplay } from './components/LedgerDisplay';
 import { GraphView } from './components/GraphView';
-import { Brain, Zap, Book, Volume2, Activity, ImageIcon } from 'lucide-react';
+import { Brain, Zap, Book, Volume2, Activity, ImageIcon, Video, Edit2, Upload, Eye } from 'lucide-react';
 import { useTTS } from './hooks/useTTS';
 
 const App: React.FC = () => {
@@ -22,8 +29,14 @@ const App: React.FC = () => {
   const [lore, setLore] = useState<{title: string, content: string} | null>(null);
   const [showLore, setShowLore] = useState(false);
   const [sceneImage, setSceneImage] = useState<string | null>(null);
+  const [sceneVideo, setSceneVideo] = useState<string | null>(null);
+  const [editMode, setEditMode] = useState(false);
+  const [editPrompt, setEditPrompt] = useState("");
+  const [analysisResult, setAnalysisResult] = useState<{analysis: string, significance: string} | null>(null);
+  
   const { speak, speaking } = useTTS();
   const bottomRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // ---------------- Initialization ----------------
   useEffect(() => {
@@ -40,6 +53,7 @@ const App: React.FC = () => {
   // ---------------- Logic ----------------
   const startScene = async (action: string) => {
     setGameState(prev => ({ ...prev, isLoading: true, isThinking: true }));
+    setSceneVideo(null); // Reset video on new scene
 
     let newScene: Scene | null = null;
 
@@ -48,29 +62,23 @@ const App: React.FC = () => {
 
         // Trigger Image Generation in parallel if visual prompt exists
         if (newScene.visualPrompt) {
-            // Added .catch() for parallel safety
             generateSceneImage(newScene.visualPrompt).then(img => {
                 if (img) setSceneImage(img);
             }).catch(e => console.error("Image generation failed silently:", e));
         }
 
         // Trigger TTS
-        // Match speaker to character roster to find their default voice definition
         const speakerChar = CHARACTERS.find(c => 
             newScene!.speaker === c.name || 
             newScene!.speaker.includes(c.name) ||
             c.name.includes(newScene!.speaker)
         );
         
-        // Use dynamic voice definition from scene if available, otherwise fallback to character default
         const voiceToUse = newScene.voiceDef || speakerChar?.voiceDef;
-
-        // Speak the narrative. 
         speak(newScene.description, voiceToUse);
 
     } catch (e) {
         console.error("Critical error in startScene execution:", e);
-        // Use a final fail-safe scene if the generation or promise chain totally failed
         newScene = {
             description: "A profound silence descends. The machine is broken. You are alone. (API Error or Network Failure)",
             speaker: "System Error",
@@ -80,9 +88,8 @@ const App: React.FC = () => {
         };
     }
     
-    // This state update is now guaranteed to run
     setGameState(prev => {
-        if (!newScene) return { ...prev, isLoading: false, isThinking: false }; // Should not happen
+        if (!newScene) return { ...prev, isLoading: false, isThinking: false };
 
         // Apply Ledger Updates
         const newLedger = { ...prev.ledger };
@@ -99,21 +106,18 @@ const App: React.FC = () => {
         if (newScene.speaker && newScene.speaker !== 'Narrator' && newScene.speaker !== 'System Error' && newScene.speaker !== 'System') {
             const speakerId = CHARACTERS.find(c => newScene!.speaker.includes(c.name))?.id || newScene.speaker;
             
-            // Check if link exists
             const linkIndex = newGraph.links.findIndex(l => 
               (typeof l.source === 'string' ? l.source : (l.source as any).id) === speakerId && 
               (typeof l.target === 'string' ? l.target : (l.target as any).id) === 'Subject'
             );
 
             if (linkIndex === -1 && speakerId !== 'Subject') {
-               // Add new relationship if character interacts for first time
                newGraph.links.push({
                    source: speakerId,
                    target: 'Subject',
                    value: 0.1,
                    type: 'dominance'
                });
-               // Add node if missing
                if (!newGraph.nodes.find(n => n.id === speakerId)) {
                    newGraph.nodes.push({ 
                        id: speakerId, 
@@ -122,7 +126,6 @@ const App: React.FC = () => {
                    });
                }
             } else if (linkIndex > -1) {
-               // Intensify existing
                newGraph.links[linkIndex].value = Math.min(1, newGraph.links[linkIndex].value + 0.1);
             }
         }
@@ -132,7 +135,7 @@ const App: React.FC = () => {
           ledger: newLedger,
           graph: newGraph,
           currentScene: newScene,
-          isLoading: false, // SUCCESS! Guaranteed to exit loading state.
+          isLoading: false, 
           isThinking: false,
           history: prev.currentScene ? [...prev.history, prev.currentScene] : prev.history
         };
@@ -149,7 +152,39 @@ const App: React.FC = () => {
           const newLore = await generateLoreEntry();
           setLore(newLore);
       }
-  }
+  };
+
+  const handleEditImage = async () => {
+      if (!sceneImage || !editPrompt) return;
+      const newImage = await editSceneImage(sceneImage, editPrompt);
+      if (newImage) {
+          setSceneImage(newImage);
+          setEditMode(false);
+          setEditPrompt("");
+      }
+  };
+
+  const handleAnimateScene = async () => {
+      if (!gameState.currentScene?.visualPrompt) return;
+      // Optimistically show loading or indication?
+      const videoUrl = await generateSceneVideo(gameState.currentScene.visualPrompt);
+      if (videoUrl) {
+          setSceneVideo(videoUrl);
+      }
+  };
+
+  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+      const file = event.target.files?.[0];
+      if (file) {
+          const reader = new FileReader();
+          reader.onloadend = async () => {
+              const base64String = reader.result as string;
+              const analysis = await analyzeEvidence(base64String);
+              setAnalysisResult(analysis);
+          };
+          reader.readAsDataURL(file);
+      }
+  };
 
   // ---------------- Render ----------------
   return (
@@ -157,12 +192,48 @@ const App: React.FC = () => {
       
       {/* Dynamic Background Layer */}
       <div className="fixed inset-0 z-0 transition-all duration-1000 ease-in-out">
-        {sceneImage ? (
+        {sceneVideo ? (
+             <video src={sceneVideo} autoPlay loop muted className="w-full h-full object-cover opacity-40" />
+        ) : sceneImage ? (
            <img src={sceneImage} alt="Scene" className="w-full h-full object-cover opacity-40 animate-pulse-slow" />
         ) : (
            <div className="w-full h-full bg-concrete opacity-90 bg-[url('https://www.transparenttextures.com/patterns/concrete-wall.png')]" />
         )}
         <div className="absolute inset-0 bg-gradient-to-t from-black via-concrete/50 to-transparent mix-blend-multiply" />
+        
+        {/* Creative Tools Overlay */}
+        <div className="absolute top-20 right-6 z-20 flex flex-col gap-2">
+             {sceneImage && !sceneVideo && (
+                 <>
+                    <button 
+                        onClick={() => setEditMode(!editMode)}
+                        className="p-2 bg-black/50 border border-renaissanceGold text-renaissanceGold hover:bg-renaissanceGold hover:text-concrete rounded transition-colors"
+                        title="Edit Visuals"
+                    >
+                        <Edit2 size={16} />
+                    </button>
+                    <button 
+                        onClick={handleAnimateScene}
+                        className="p-2 bg-black/50 border border-renaissanceGold text-renaissanceGold hover:bg-renaissanceGold hover:text-concrete rounded transition-colors"
+                        title="Animate Scene (Veo)"
+                    >
+                        <Video size={16} />
+                    </button>
+                 </>
+             )}
+             {editMode && (
+                 <div className="bg-black/80 p-2 rounded border border-renaissanceGold flex gap-2">
+                     <input 
+                        type="text" 
+                        value={editPrompt} 
+                        onChange={(e) => setEditPrompt(e.target.value)}
+                        placeholder="e.g. Add rain..."
+                        className="bg-transparent border-b border-gray-500 text-xs text-white focus:outline-none"
+                     />
+                     <button onClick={handleEditImage} className="text-xs text-green-400">GO</button>
+                 </div>
+             )}
+        </div>
       </div>
       
       {/* Main Grid Layout */}
@@ -181,12 +252,23 @@ const App: React.FC = () => {
                 COGNITIVE ARCHITECTURE: GEMINI 3 PRO // SYSTEM 2
                 </div>
             </div>
-            <button 
-                onClick={handleOpenArchives}
-                className="flex items-center gap-2 px-4 py-2 border border-renaissanceGold text-renaissanceGold hover:bg-renaissanceGold hover:text-concrete transition-colors text-xs tracking-widest uppercase"
-            >
-                <Book size={14} /> Archives
-            </button>
+            <div className="flex gap-2">
+                <button 
+                    onClick={() => fileInputRef.current?.click()}
+                    className="flex items-center gap-2 px-4 py-2 border border-concrete text-concrete hover:bg-concrete hover:text-white transition-colors text-xs tracking-widest uppercase bg-textBone/20"
+                    title="Analyze Evidence"
+                >
+                    <Upload size={14} />
+                </button>
+                <input type="file" ref={fileInputRef} className="hidden" onChange={handleFileUpload} accept="image/*" />
+                
+                <button 
+                    onClick={handleOpenArchives}
+                    className="flex items-center gap-2 px-4 py-2 border border-renaissanceGold text-renaissanceGold hover:bg-renaissanceGold hover:text-concrete transition-colors text-xs tracking-widest uppercase"
+                >
+                    <Book size={14} /> Archives
+                </button>
+            </div>
           </header>
 
           {/* Narrative Scroll Area */}
@@ -224,7 +306,7 @@ const App: React.FC = () => {
               <div className="flex flex-col items-center justify-center py-12 space-y-4 opacity-80">
                 <Brain className="w-12 h-12 text-candleGlow animate-pulse-slow" />
                 <div className="text-xs font-mono text-candleGlow">
-                  {gameState.isThinking ? "DIRECTOR AI THINKING..." : "GENERATING..."}
+                  {gameState.isThinking ? "DIRECTOR AI THINKING (SYSTEM 2)..." : "GENERATING..."}
                 </div>
                 <div className="h-1 w-32 bg-gray-800 rounded-full overflow-hidden">
                    <div className="h-full bg-candleGlow animate-[width_2s_ease-in-out_infinite]" style={{width: '50%'}}></div>
@@ -287,13 +369,20 @@ const App: React.FC = () => {
                     Turn Count: {gameState.ledger.turnCount}<br/>
                     Entropy: Stable<br/>
                     Narrative Arc: Rising Action<br/>
-                    Focus: Breaking the ego via "Testimony".
+                    Model: Gemini 3 Pro<br/>
                   </p>
                   {sceneImage && (
                     <div className="mt-4 border border-gray-700 p-1 bg-black">
-                        <div className="text-[10px] text-gray-500 mb-1 flex items-center gap-1"><ImageIcon size={10}/> IMAGEN 4.0 VISUAL</div>
+                        <div className="text-[10px] text-gray-500 mb-1 flex items-center gap-1"><ImageIcon size={10}/> VISUAL CONTEXT</div>
                         <img src={sceneImage} className="w-full h-24 object-cover opacity-80" alt="Scene Preview" />
                     </div>
+                  )}
+                  {analysisResult && (
+                      <div className="mt-4 border border-gray-700 p-2 bg-black/50">
+                          <div className="text-[10px] text-blue-400 mb-1 flex items-center gap-1"><Eye size={10}/> EVIDENCE ANALYSIS</div>
+                          <p className="text-[10px] text-gray-300">{analysisResult.analysis}</p>
+                          <p className="text-[10px] text-oxblood mt-1 font-bold">{analysisResult.significance}</p>
+                      </div>
                   )}
                 </div>
              </div>

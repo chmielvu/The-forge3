@@ -1,5 +1,5 @@
 
-import { GoogleGenAI, Type, Schema } from "@google/genai";
+import { GoogleGenAI, Type, Schema, Modality } from "@google/genai";
 import { SYSTEM_INSTRUCTION } from '../constants';
 import { GameState, Scene } from '../types';
 
@@ -64,6 +64,15 @@ const loreSchema: Schema = {
   },
   required: ['title', 'content']
 };
+
+const analysisSchema: Schema = {
+    type: Type.OBJECT,
+    properties: {
+        analysis: { type: Type.STRING, description: "Detailed analysis of the uploaded image in the context of the Institute." },
+        significance: { type: Type.STRING, description: "How this image relates to the power dynamics or lore." }
+    },
+    required: ['analysis', 'significance']
+}
 
 export const generateDirectorOutput = async (state: GameState, playerAction: string): Promise<Scene> => {
   // Gemini 3 Pro is the "Director" capable of complex reasoning (System 2)
@@ -170,3 +179,143 @@ export const generateSceneImage = async (visualPrompt: string): Promise<string |
     return null;
   }
 };
+
+// New: Edit Image (Gemini 2.5 Flash Image)
+export const editSceneImage = async (base64Image: string, editInstruction: string): Promise<string | null> => {
+    try {
+        const response = await ai.models.generateContent({
+            model: 'gemini-2.5-flash-image',
+            contents: {
+                parts: [
+                    { inlineData: { mimeType: 'image/jpeg', data: base64Image.split(',')[1] } }, // Strip header
+                    { text: editInstruction }
+                ]
+            },
+            config: {
+                responseModalities: [Modality.IMAGE]
+            }
+        });
+        
+        const part = response.candidates?.[0]?.content?.parts?.[0];
+        if (part && part.inlineData) {
+             return `data:image/png;base64,${part.inlineData.data}`;
+        }
+        return null;
+    } catch (error) {
+        console.error("Image Edit Failure:", error);
+        return null;
+    }
+}
+
+// New: Video Generation (Veo)
+export const generateSceneVideo = async (visualPrompt: string): Promise<string | null> => {
+    try {
+        let operation = await ai.models.generateVideos({
+            model: 'veo-3.1-fast-generate-preview',
+            prompt: visualPrompt + ", cinematic, atmospheric, slight movement, 4k",
+            config: {
+                numberOfVideos: 1,
+                resolution: '1080p',
+                aspectRatio: '16:9'
+            }
+        });
+
+        // Poll for completion
+        while (!operation.done) {
+            await new Promise(resolve => setTimeout(resolve, 2000)); // Wait 2s
+            operation = await ai.operations.getVideosOperation({ operation: operation });
+        }
+
+        const videoUri = operation.response?.generatedVideos?.[0]?.video?.uri;
+        if (videoUri) {
+            // Fetch the video bytes
+            const videoResponse = await fetch(`${videoUri}&key=${process.env.API_KEY}`);
+            const blob = await videoResponse.blob();
+            return URL.createObjectURL(blob);
+        }
+        return null;
+    } catch (error) {
+        console.error("Video Generation Failure:", error);
+        return null;
+    }
+}
+
+// New: Analyze Image (Gemini 3 Pro)
+export const analyzeEvidence = async (base64Image: string): Promise<{analysis: string, significance: string}> => {
+    try {
+        const response = await ai.models.generateContent({
+            model: 'gemini-3-pro-preview',
+            contents: {
+                parts: [
+                    { inlineData: { mimeType: 'image/jpeg', data: base64Image.split(',')[1] } },
+                    { text: "Analyze this image in the context of a dark, authoritarian boarding school ('The Forge'). What does it reveal about the Faculty or the suffering of the students?" }
+                ]
+            },
+            config: {
+                responseMimeType: "application/json",
+                responseSchema: analysisSchema
+            }
+        });
+        
+        if (response.text) {
+            return JSON.parse(response.text);
+        }
+        throw new Error("Analysis failed");
+    } catch (error) {
+        console.error("Analysis Failure:", error);
+        return { analysis: "The data is corrupted.", significance: "Unknown." };
+    }
+}
+
+// New: TTS (Gemini 2.5 Flash TTS)
+export const generateSpeech = async (text: string, voiceId: string): Promise<ArrayBuffer | null> => {
+    // Map internal voice IDs to Gemini Voice Names if needed, or use defaults
+    const voiceMap: Record<string, string> = {
+        "tts_selene_v1": "Puck", // Authoritative
+        "tts_lysandra_v1": "Kore", // Analytical
+        "tts_petra_v1": "Fenrir", // Aggressive
+        "tts_calista_v1": "Charon", // Deep/Seductive
+        "tts_elara_v1": "Kore",
+        "tts_kaelen_v1": "Puck",
+        "tts_anya_v1": "Kore",
+        "tts_rhea_v1": "Fenrir",
+        "tts_subject_male_01": "Zephyr"
+    };
+
+    const geminiVoice = voiceMap[voiceId] || "Puck";
+
+    try {
+        const response = await ai.models.generateContent({
+            model: "gemini-2.5-flash-preview-tts",
+            contents: {
+                parts: [{ text: text }]
+            },
+            config: {
+                responseModalities: [Modality.AUDIO],
+                speechConfig: {
+                    voiceConfig: {
+                        prebuiltVoiceConfig: {
+                            voiceName: geminiVoice
+                        }
+                    }
+                }
+            }
+        });
+
+        const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+        if (base64Audio) {
+             // Decode base64 to ArrayBuffer
+             const binaryString = atob(base64Audio);
+             const len = binaryString.length;
+             const bytes = new Uint8Array(len);
+             for (let i = 0; i < len; i++) {
+                 bytes[i] = binaryString.charCodeAt(i);
+             }
+             return bytes.buffer;
+        }
+        return null;
+    } catch (error) {
+        console.error("TTS Failure:", error);
+        return null;
+    }
+}
