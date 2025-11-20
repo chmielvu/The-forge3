@@ -1,0 +1,5 @@
+{
+  "name": "The Forge's Loom",
+  "description": "A procedural narrative RPG powered by Gemini 3 Pro, utilizing a native cognitive architecture to explore themes of power, trauma, and the 'Boarding School of Hell'. Features a persistent NetworkX knowledge graph and the YandereLedger state machine.",
+  "requestFramePermissions": []
+}
